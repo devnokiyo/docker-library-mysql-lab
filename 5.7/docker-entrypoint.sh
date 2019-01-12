@@ -53,6 +53,7 @@ process_init_file() {
 		*.sh)     echo "$0: running $f"; . "$f" ;;
 		*.sql)    echo "$0: running $f"; "${mysql[@]}" < "$f"; echo ;;
 		*.sql.gz) echo "$0: running $f"; gunzip -c "$f" | "${mysql[@]}"; echo ;;
+		*.cnf)    echo "$0: running $f"; cp -a "$f" /etc/mysql/conf.d/; echo ;;
 		*)        echo "$0: ignoring $f" ;;
 	esac
 	echo
@@ -80,12 +81,27 @@ _get_config() {
 	"$@" --verbose --help --log-bin-index="$(mktemp -u)" 2>/dev/null | awk '$1 == "'"$conf"'" { print $2; exit }'
 }
 
+permission_setting_file() {
+	for f in /docker-entrypoint-initdb.d/*; do
+		case "$f" in
+			*.cnf)
+			echo "$0: permisson customize for MySQL user $f"
+			chown mysql:mysql "$f"
+			conf_file_path="/etc/mysql/conf.d/${f##*/}"
+			touch $conf_file_path
+			chown mysql:mysql $conf_file_path
+			;;
+		esac
+	done
+}
+
 # allow the container to be started with `--user`
 if [ "$1" = 'mysqld' -a -z "$wantHelp" -a "$(id -u)" = '0' ]; then
 	_check_config "$@"
 	DATADIR="$(_get_config 'datadir' "$@")"
 	mkdir -p "$DATADIR"
 	chown -R mysql:mysql "$DATADIR"
+	permission_setting_file
 	exec gosu mysql "$BASH_SOURCE" "$@"
 fi
 
